@@ -1,30 +1,43 @@
 import { useState, useEffect } from 'react';
 import './App.css';
+import { useAuth, AuthProvider } from './AuthContext';
+import AuthPage from './AuthPage';
 
 const API_BASE_URL = 'http://localhost:3001/api';
 
-function App() {
+function AppContent() {
+  const { user, token, logout, loading } = useAuth();
   const [gameStarted, setGameStarted] = useState(false);
   const [players, setPlayers] = useState([]);
   const [winningScore, setWinningScore] = useState(100);
-  const [numPlayersInput, setNumPlayersInput] = useState(2); // Default 2 players
-  const [winningScoreInput, setWinningScoreInput] = useState(100); // Default winning score
+  const [numPlayersInput, setNumPlayersInput] = useState(2);
+  const [winningScoreInput, setWinningScoreInput] = useState(100);
   const [winner, setWinner] = useState(null);
-  const [playerScoresInput, setPlayerScoresInput] = useState({}); // To hold input for current round scores
+  const [playerScoresInput, setPlayerScoresInput] = useState({});
 
-  // Fetch initial game state or update if game is in progress
   useEffect(() => {
-    fetch(`${API_BASE_URL}/game/state`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.gameStarted) {
-          setGameStarted(true);
-          setPlayers(data.players);
-          setWinningScore(data.winningScore);
-        }
+    if (token) {
+      fetch(`${API_BASE_URL}/game/state`, {
+        headers: { Authorization: `Bearer ${token}` },
       })
-      .catch((error) => console.error('Error fetching game state:', error));
-  }, []);
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.gameStarted) {
+            setGameStarted(true);
+            setPlayers(data.players);
+            setWinningScore(data.winningScore);
+            
+            // Initialize playerScoresInput
+            const initialScoresInput = {};
+            data.players.forEach(player => {
+              initialScoresInput[player.id] = 0;
+            });
+            setPlayerScoresInput(initialScoresInput);
+          }
+        })
+        .catch((error) => console.error('Error fetching game state:', error));
+    }
+  }, [token]);
 
   const handleStartGame = async () => {
     try {
@@ -32,6 +45,7 @@ function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           numPlayers: numPlayersInput,
@@ -44,7 +58,7 @@ function App() {
         setPlayers(data.gameState.players);
         setWinningScore(data.gameState.winningScore);
         setWinner(null);
-        // Initialize playerScoresInput for the new game
+        
         const initialScoresInput = {};
         data.gameState.players.forEach(player => {
           initialScoresInput[player.id] = 0;
@@ -62,54 +76,70 @@ function App() {
   const handleScoreChange = (playerId, value) => {
     setPlayerScoresInput(prev => ({
       ...prev,
-      [playerId]: parseInt(value, 10) || 0, // Ensure it's a number
+      [playerId]: parseInt(value, 10) || 0,
     }));
   };
 
   const handleUpdateScores = async () => {
     try {
-        // Iterate through all players and update their scores
-        for (const player of players) {
-            const scoreChange = playerScoresInput[player.id];
-            if (scoreChange !== 0) { // Only send update if score changed
-                const response = await fetch(`${API_BASE_URL}/game/score`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        playerId: player.id,
-                        scoreChange: scoreChange,
-                    }),
-                });
-                const data = await response.json();
-                if (response.ok) {
-                    setPlayers(data.gameState.players);
-                    if (data.winner) {
-                        setWinner(data.winner);
-                        setGameStarted(false); // Game ends when there's a winner
-                    }
-                } else {
-                    alert(data.message);
-                    break; // Stop updating if an error occurs
-                }
+      let updatedPlayers = [...players];
+      let currentWinner = null;
+
+      for (const player of players) {
+        const scoreChange = playerScoresInput[player.id];
+        if (scoreChange !== 0) {
+          const response = await fetch(`${API_BASE_URL}/game/score`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              playerId: player.id,
+              scoreChange: scoreChange,
+            }),
+          });
+          const data = await response.json();
+          if (response.ok) {
+            updatedPlayers = data.gameState.players;
+            if (data.winner) {
+              currentWinner = data.winner;
+              setWinner(data.winner);
+              setGameStarted(false);
             }
+          } else {
+            alert(data.message);
+            break;
+          }
         }
-        // Reset player scores input for the next round
-        const resetScoresInput = {};
-        players.forEach(player => {
-            resetScoresInput[player.id] = 0;
-        });
-        setPlayerScoresInput(resetScoresInput);
+      }
+      setPlayers(updatedPlayers);
+      
+      const resetScoresInput = {};
+      updatedPlayers.forEach(player => {
+        resetScoresInput[player.id] = 0;
+      });
+      setPlayerScoresInput(resetScoresInput);
 
     } catch (error) {
-        console.error('Error updating scores:', error);
-        alert('Failed to update scores.');
+      console.error('Error updating scores:', error);
+      alert('Failed to update scores.');
     }
   };
 
+  if (loading) return <div>Loading...</div>;
+
+  if (!user) {
+    return <AuthPage />;
+  }
+
   return (
     <div className="App">
+      <header>
+        <span>Logged in as {user.username}</span>
+        <button onClick={logout}>Logout</button>
+      </header>
+
       <h1>KCD Scorekeeper</h1>
 
       {winner && (
@@ -172,6 +202,14 @@ function App() {
         </div>
       )}
     </div>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 

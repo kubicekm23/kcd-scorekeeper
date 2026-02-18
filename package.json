@@ -1,0 +1,14 @@
+{
+  "name": "kcd-scorekeeper-root",
+  "version": "1.0.0",
+  "scripts": {
+    "install-backend": "npm install --prefix src/backend",
+    "install-frontend": "npm install --prefix src/frontend",
+    "install-all": "npm run install-backend && npm run install-frontend",
+    "build-frontend": "npm run build --prefix src/frontend",
+    "start-backend": "node src/backend/server.js",
+    "dev-backend": "npx nodemon src/backend/server.js",
+    "dev-frontend": "npm run dev --prefix src/frontend",
+    "deploy": "npm run build-frontend && npm run start-backend"
+  }
+}
