@@ -167,11 +167,8 @@ app.get('/api/game/state', authenticate, async (req, res) => {
 const frontendDistPath = path.join(__dirname, '../frontend/dist');
 app.use(express.static(frontendDistPath));
 
-// Fallback for SPA
-app.get('/*', (req, res) => {
-  if (req.path.startsWith('/api/')) {
-    return res.status(404).json({ message: 'API route not found' });
-  }
+// Fallback for SPA: Serve index.html for any non-API GET request
+app.get(/^(?!\/api).*/, (req, res) => {
   res.sendFile(path.join(frontendDistPath, 'index.html'));
 });
 
