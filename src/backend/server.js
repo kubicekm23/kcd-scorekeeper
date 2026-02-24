@@ -168,13 +168,11 @@ const frontendDistPath = path.join(__dirname, '../frontend/dist');
 app.use(express.static(frontendDistPath));
 
 // Fallback for SPA
-app.get('*', (req, res) => {
-  // Only serve index.html if it's not an API route
-  if (!req.path.startsWith('/api/')) {
-    res.sendFile(path.join(frontendDistPath, 'index.html'));
-  } else {
-    res.status(404).json({ message: 'API route not found' });
+app.get('/*', (req, res) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ message: 'API route not found' });
   }
+  res.sendFile(path.join(frontendDistPath, 'index.html'));
 });
 
 app.listen(port, () => {
