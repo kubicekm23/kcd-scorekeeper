@@ -4,48 +4,63 @@ const cors = require('cors');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const db = require('./database');
+const connectDB = require('./database');
 const authenticate = require('./middleware/auth');
+const User = require('./models/User');
+const Game = require('./models/Game');
 
 const app = express();
 const port = process.env.PORT || 3001;
+
+// Connect to Database
+connectDB();
 
 app.use(cors());
 app.use(express.json());
 
 // Auth Routes
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ message: 'Username and password are required' });
   }
 
-  const hashedPassword = bcrypt.hashSync(password, 10);
   try {
-    const info = db.prepare('INSERT INTO users (username, password) VALUES (?, ?)').run(username, hashedPassword);
-    res.status(201).json({ message: 'User registered successfully', userId: info.lastInsertRowid });
-  } catch (err) {
-    if (err.message.includes('UNIQUE constraint failed')) {
+    const existingUser = await User.findOne({ username });
+    if (existingUser) {
       return res.status(400).json({ message: 'Username already exists' });
     }
+
+    const hashedPassword = bcrypt.hashSync(password, 10);
+    const user = new User({ username, password: hashedPassword });
+    await user.save();
+    
+    res.status(201).json({ message: 'User registered successfully', userId: user.id });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body;
-  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  try {
+    const user = await User.findOne({ username });
 
-  if (user && bcrypt.compareSync(password, user.password)) {
-    const token = jwt.sign({ id: user.id, username: user.username }, process.env.JWT_SECRET || 'super-secret-kcd-key', { expiresIn: '1d' });
-    res.json({ token, user: { id: user.id, username: user.username } });
-  } else {
-    res.status(401).json({ message: 'Invalid username or password' });
+    if (user && bcrypt.compareSync(password, user.password)) {
+      const token = jwt.sign({ id: user.id, username: user.username }, process.env.JWT_SECRET || 'super-secret-kcd-key', { expiresIn: '1d' });
+      res.json({ token, user: { id: user.id, username: user.username } });
+    } else {
+      res.status(401).json({ message: 'Invalid username or password' });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Protected Game Routes
-app.post('/api/game/start', authenticate, (req, res) => {
+app.post('/api/game/start', authenticate, async (req, res) => {
   const { numPlayers, winningScore, playerNames } = req.body;
   const userId = req.user.id;
 
@@ -53,81 +68,113 @@ app.post('/api/game/start', authenticate, (req, res) => {
     return res.status(400).json({ message: 'Number of players must be greater than 0.' });
   }
 
-  // Deactivate any currently active games for this user
-  db.prepare("UPDATE games SET status = 'finished' WHERE user_id = ? AND status = 'active'").run(userId);
+  try {
+    // Deactivate any currently active games for this user
+    await Game.updateMany({ userId, status: 'active' }, { status: 'finished' });
 
-  const info = db.prepare('INSERT INTO games (user_id, winning_score, status) VALUES (?, ?, ?)').run(userId, winningScore || 100, 'active');
-  const gameId = info.lastInsertRowid;
+    const players = [];
+    for (let i = 0; i < numPlayers; i++) {
+      const name = (playerNames && playerNames[i]) || `Player ${i + 1}`;
+      players.push({ name, score: 0 });
+    }
 
-  const insertPlayer = db.prepare('INSERT INTO players (game_id, name, score) VALUES (?, ?, ?)');
-  const players = [];
+    const game = new Game({
+      userId,
+      winningScore: winningScore || 100,
+      status: 'active',
+      players
+    });
 
-  for (let i = 0; i < numPlayers; i++) {
-    const name = (playerNames && playerNames[i]) || `Player ${i + 1}`;
-    const pInfo = insertPlayer.run(gameId, name, 0);
-    players.push({ id: pInfo.lastInsertRowid, name, score: 0 });
+    await game.save();
+
+    res.json({ 
+      message: 'Game started successfully!', 
+      gameState: { 
+        id: game.id, 
+        players: game.players.map(p => ({ id: p.id, name: p.name, score: p.score })), 
+        winningScore, 
+        gameStarted: true 
+      } 
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal server error' });
   }
-
-  res.json({ message: 'Game started successfully!', gameState: { id: gameId, players, winningScore, gameStarted: true } });
 });
 
-app.post('/api/game/score', authenticate, (req, res) => {
+app.post('/api/game/score', authenticate, async (req, res) => {
   const { playerId, scoreChange } = req.body;
   const userId = req.user.id;
 
-  // Verify game belongs to user
-  const player = db.prepare(`
-    SELECT p.*, g.winning_score, g.id as game_id 
-    FROM players p 
-    JOIN games g ON p.game_id = g.id 
-    WHERE p.id = ? AND g.user_id = ? AND g.status = 'active'
-  `).get(playerId, userId);
+  try {
+    // Find the active game for this user that contains the player
+    const game = await Game.findOne({ userId, status: 'active', 'players._id': playerId });
 
-  if (!player) {
-    return res.status(404).json({ message: 'Player or active game not found.' });
+    if (!game) {
+      return res.status(404).json({ message: 'Player or active game not found.' });
+    }
+
+    const player = game.players.id(playerId);
+    player.score += scoreChange;
+
+    const winner = player.score >= game.winningScore ? player.name : null;
+    if (winner) {
+      game.status = 'finished';
+    }
+
+    await game.save();
+
+    const gameState = {
+      id: game.id,
+      winningScore: game.winningScore,
+      players: game.players.map(p => ({ id: p.id, name: p.name, score: p.score })),
+      gameStarted: game.status === 'active'
+    };
+
+    if (winner) {
+      return res.json({ message: `${winner} wins!`, gameState, winner });
+    }
+
+    res.json({ message: 'Score updated successfully!', gameState });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal server error' });
   }
-
-  const newScore = player.score + scoreChange;
-  db.prepare('UPDATE players SET score = ? WHERE id = ?').run(newScore, playerId);
-
-  const gameState = {
-    id: player.game_id,
-    winningScore: player.winning_score,
-    players: db.prepare('SELECT * FROM players WHERE game_id = ?').all(player.game_id),
-    gameStarted: true
-  };
-
-  if (newScore >= player.winning_score) {
-    db.prepare("UPDATE games SET status = 'finished' WHERE id = ?").run(player.game_id);
-    return res.json({ message: `${player.name} wins!`, gameState, winner: player.name });
-  }
-
-  res.json({ message: 'Score updated successfully!', gameState });
 });
 
-app.get('/api/game/state', authenticate, (req, res) => {
+app.get('/api/game/state', authenticate, async (req, res) => {
   const userId = req.user.id;
-  const activeGame = db.prepare("SELECT * FROM games WHERE user_id = ? AND status = 'active'").get(userId);
+  try {
+    const activeGame = await Game.findOne({ userId, status: 'active' });
 
-  if (activeGame) {
-    const players = db.prepare('SELECT * FROM players WHERE game_id = ?').all(activeGame.id);
-    res.json({
-      gameStarted: true,
-      id: activeGame.id,
-      winningScore: activeGame.winning_score,
-      players
-    });
-  } else {
-    res.json({ gameStarted: false });
+    if (activeGame) {
+      res.json({
+        gameStarted: true,
+        id: activeGame.id,
+        winningScore: activeGame.winningScore,
+        players: activeGame.players.map(p => ({ id: p.id, name: p.name, score: p.score }))
+      });
+    } else {
+      res.json({ gameStarted: false });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Serve frontend in production
-app.use(express.static(path.join(__dirname, '../frontend/dist')));
+const frontendDistPath = path.join(__dirname, '../frontend/dist');
+app.use(express.static(frontendDistPath));
 
 // Fallback for SPA
-app.use((req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/dist', 'index.html'));
+app.get('*', (req, res) => {
+  // Only serve index.html if it's not an API route
+  if (!req.path.startsWith('/api/')) {
+    res.sendFile(path.join(frontendDistPath, 'index.html'));
+  } else {
+    res.status(404).json({ message: 'API route not found' });
+  }
 });
 
 app.listen(port, () => {
