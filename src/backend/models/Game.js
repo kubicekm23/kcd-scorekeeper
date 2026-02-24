@@ -10,6 +10,12 @@ const gameSchema = new mongoose.Schema({
   winningScore: { type: Number, default: 100 },
   status: { type: String, enum: ['active', 'finished'], default: 'active' },
   players: [playerSchema],
+  scoreHistory: [{
+    playerId: { type: mongoose.Schema.Types.ObjectId, required: true },
+    playerName: { type: String, required: true }, // Store player name at the time of scoring
+    scoreChange: { type: Number, required: true },
+    timestamp: { type: Date, default: Date.now },
+  }],
   createdAt: { type: Date, default: Date.now },
 });
 

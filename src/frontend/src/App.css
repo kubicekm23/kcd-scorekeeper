@@ -5,10 +5,16 @@
   text-align: center;
 }
 
-.App {
+.App, .full-center {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.full-center {
+  padding: 2rem;
 }
 
 header {
@@ -201,3 +207,97 @@ button[type="button"]:hover {
   background-color: #3b2b1a;
   margin-top: 1rem;
 }
+
+.game-history {
+  width: 100%;
+  max-width: 600px;
+  margin-top: 2rem;
+  text-align: left;
+}
+
+.game-history h2 {
+  color: #3b2b1a;
+  text-align: center;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid #d2b48c;
+  padding-bottom: 10px;
+}
+
+.history-game-item {
+  background-color: #fef8eb;
+  border: 2px solid #8b5a2b;
+  padding: 1.5rem;
+  border-radius: 4px;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.history-game-item h3 {
+  color: #5c3c1e;
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+.history-game-item p {
+  color: #3b2b1a;
+  margin-bottom: 0.5rem;
+}
+
+.history-game-item ul {
+  list-style: none;
+  padding: 0;
+}
+
+.history-game-item li {
+  background-color: #f5e9d3;
+  padding: 8px 12px;
+  margin-bottom: 5px;
+  border-radius: 3px;
+  color: #3b2b1a;
+  display: flex;
+  justify-content: space-between;
+}
+
+.score-history-display {
+  margin-top: 2rem;
+  background-color: #f5e9d3;
+  padding: 1.5rem;
+  border-radius: 4px;
+  border: 1px solid #d2b48c;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.score-history-display h4 {
+  color: #5c3c1e;
+  margin-top: 0;
+  margin-bottom: 1rem;
+  border-bottom: 1px dashed #d2b48c;
+  padding-bottom: 8px;
+}
+
+.score-history-display ul {
+  list-style: none;
+  padding: 0;
+  max-height: 200px; /* Limit height */
+  overflow-y: auto; /* Enable scrolling */
+  background-color: #fff;
+  border: 1px solid #eee;
+  padding: 10px;
+  border-radius: 4px;
+}
+
+.score-history-display li {
+  padding: 6px 0;
+  border-bottom: 1px dotted #e0e0e0;
+  color: #3b2b1a;
+  font-size: 0.95rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.score-history-display li:last-child {
+  border-bottom: none;
+}
+
+

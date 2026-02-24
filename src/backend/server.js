@@ -117,6 +117,13 @@ app.post('/api/game/score', authenticate, async (req, res) => {
     const player = game.players.id(playerId);
     player.score += scoreChange;
 
+    game.scoreHistory.push({
+      playerId: player._id,
+      playerName: player.name,
+      scoreChange: scoreChange,
+      timestamp: new Date()
+    });
+
     const winner = player.score >= game.winningScore ? player.name : null;
     if (winner) {
       game.status = 'finished';
@@ -152,11 +159,22 @@ app.get('/api/game/state', authenticate, async (req, res) => {
         gameStarted: true,
         id: activeGame.id,
         winningScore: activeGame.winningScore,
-        players: activeGame.players.map(p => ({ id: p.id, name: p.name, score: p.score }))
+        players: activeGame.players.map(p => ({ id: p.id, name: p.name, score: p.score })),
+        scoreHistory: activeGame.scoreHistory,
       });
     } else {
       res.json({ gameStarted: false });
     }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.get('/api/game/history', authenticate, async (req, res) => {
+  try {
+    const games = await Game.find({ userId: req.user.id, status: 'finished' }).sort({ createdAt: -1 });
+    res.json(games);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Internal server error' });
